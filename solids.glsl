@@ -40,7 +40,8 @@ uniform sampler2D theTexture;
 void main (void){
     vec4 v_normal = normalize( normal_mat * normal_vec ) ;
     vec4 v_light = normalize( vec4(0,0,0,1) - vertex_pos );
-    float theta = clamp(dot(v_normal, v_light), 0.0, 1.0) * 0.5 + 0.5;
+    float contrast = 0.8;
+    float theta = clamp(dot(v_normal, v_light), 0.0, 1.0) * contrast + (1.0 - contrast);
     // gl_FragColor = texture2D(theTexture, texcoord);
     gl_FragColor = vec4(theta, theta, theta, 1.0) * texture2D(theTexture, texcoord);
 }

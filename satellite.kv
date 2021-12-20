@@ -1,0 +1,63 @@
+#:kivy 2.0.0
+
+BoxLayout:
+
+    listbtn: listbtn
+    stencil: stencil
+    renderr: renderr
+    topbar: topbar
+    info1: info1
+    info2: info2
+
+    orientation: 'vertical'
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: '50dp'
+        id: topbar
+        Spinner:
+            id: listbtn
+            size_hint_x: 0.2
+            text: "ISS (ZARYA)"
+            # opacity: 0.5
+            values: app.sat_choices
+            on_text:
+                renderr.select_sat(self.text)
+        Label:
+            id: info1
+            text: "Info"
+            size_hint_x: 0.5
+            markup: True
+            canvas.before:
+                Color:
+                    rgba: 0.3, 0.3, 0.3, 0.9
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+        Label:
+            id: info2
+            text: "Info"
+            size_hint_x: 0.3
+            markup: True
+            canvas.before:
+                Color:
+                    rgba: 0.3, 0.3, 0.3, 0.9
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+
+    StencilView:
+        width: root.width
+        id: stencil
+        Renderer:
+            id: renderr
+            width: root.width
+            height: stencil.height
+            pos: stencil.pos
+            # for some reason the entire window's drawings aren't visible
+            # if there is no widget inside the renderer
+            Label:
+                id:dummy1
+                width:0
+                height:0
+

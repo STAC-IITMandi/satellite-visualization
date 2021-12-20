@@ -21,45 +21,6 @@ import datetime
 
 START_TIME = datetime.datetime.now(datetime.timezone.utc)
 
-## International Space station
-iss = ('1 25544U 98067A   21343.88482639  .00000143  00000+0  10791-4 0  9990',
-       '2 25544  51.6415 193.9729 0004414 287.4837 253.6360 15.48949833315824')
-## Atlas
-# iss = ('1 38770U 12048N   21344.72361328 0.00002400  00000-0  14519-3 0    08',
-#        '2 38770  64.6612 252.4486 0170517 317.7074  42.2926 14.98942986    08')
-## INSAT (geostationary)
-# iss = ('1 13129U 82031A   21348.37651804 -.00000335  00000-0  00000+0 0  9993',
-#        '2 13129  10.7807 313.5418 0015742   8.6672   4.2201  1.00210069149927')
-## PSLV rocket body
-# iss = ('1 41470U 16027B   21347.42402392  .00002207  00000-0  39076-3 0  9994',
-#        '2 41470  17.7589  90.9353 6026464 310.9522  10.7267  4.01028694 81752')
-
-
-def get_orbit(satellite, when):
-    t = when
-    jds, frs = [], []
-    detail = 360
-    period = datetime.timedelta(minutes = 2 * np.pi / satellite.nm)
-    for i in range(detail):
-        jd,fr=sgp4.api.jday(*t.timetuple()[:6])
-        jds.append(jd); frs.append(fr)
-        t += period/detail
-    e, p, v = satellite.sgp4_array(np.array(jds), np.array(frs))
-    for ec in e :
-        if ec :
-            Logger.error(f"SGP4 : Computational error - {sgp4.api.SGP4_ERRORS[ec]}")
-    p = np.stack([p[:,1],p[:,2],p[:,0]]).T
-    return p / satellite.radiusearthkm
-
-
-def get_rotation(when):
-    TEMEframerotation = ac.TEME(
-        (6400*u.km, 0*u.m, 0*u.m), obstime=when).transform_to(
-        ac.ITRS(obstime=when)
-    )
-    angle = TEMEframerotation.earth_location.geodetic.lon.value - 90.0
-    return angle
-
 
 def normalise(vec, up=True):
     v = vec / np.linalg.norm(vec)
@@ -69,18 +30,78 @@ def normalise(vec, up=True):
         return v
 
 
+class Satellite :
+
+    TLEs = {}
+
+    @staticmethod
+    def load(source='./celestrak-TLEs-100brightest.txt'):
+        with open(source, 'r') as f:
+            text = f.read()
+        pat = re.compile(r"(.*)\n(1.*)\n(2.*)\n")
+        for match in re.finditer(pat, text):
+            n, l1, l2 = match.groups()
+            n = n.strip()
+            if n in Satellite.TLEs :
+                Satellite.TLEs[n].append((l1.strip(), l2.strip()))
+            else :
+                Satellite.TLEs[n] = [(l1.strip(), l2.strip())]
+        duplicates, d = [], {}
+        for s in Satellite.TLEs :
+            if len(Satellite.TLEs[s])==1:
+                Satellite.TLEs[s] = Satellite.TLEs[s][0]
+            else :
+                for i, si in enumerate(Satellite.TLEs[s], 1):
+                    d[s+f" ({i})"] = si
+                duplicates.append(s)
+        for s in duplicates :
+            Satellite.TLEs.pop(s)
+        Satellite.TLEs = {**Satellite.TLEs, **d}
+
+    def __init__(self, name, when=None):
+        self.name = name
+        self.satrec = sgp4.api.Satrec.twoline2rv(*self.TLEs[name])
+        self.period = datetime.timedelta(minutes = 2 * np.pi / self.satrec.nm)
+        self.obstime = when or datetime.datetime.now(datetime.timezone.utc)
+        self.orbitpath = self.get_orbit(self.obstime).flatten()
+        self.pos = tuple(self.orbitpath[:3])
+        self.framerot = self.get_rotation(self.obstime)
+
+    def get_orbit(self, when=None):
+        t = when or self.obstime
+        jds, frs = [], []
+        detail = 360
+        for i in range(detail):
+            jd,fr=sgp4.api.jday(*t.timetuple()[:6])
+            jds.append(jd); frs.append(fr)
+            t += self.period/detail
+        e, p, v = self.satrec.sgp4_array(np.array(jds), np.array(frs))
+        for ec in e :
+            if ec :
+                Logger.error(f"SGP4 : Computational error - {sgp4.api.SGP4_ERRORS[ec]}")
+        p = np.stack([p[:,1],p[:,2],p[:,0]]).T
+        return p / self.satrec.radiusearthkm
+
+
+    def get_rotation(self, when=None):
+        t = when or self.obstime
+        TEMEframerotation = ac.TEME(
+            (6400*u.km, 0*u.m, 0*u.m), obstime=t).transform_to(
+            ac.ITRS(obstime=t)
+        )
+        angle = TEMEframerotation.earth_location.geodetic.lon.value - 90.0
+        return angle
+
+
+
 class Renderer(Widget):
     def __init__(self, **kwargs):
-        self.canvas = RenderContext(compute_normal_mat=True)
+        self.canvas = RenderContext(compute_normal_mat=True, 
+                            with_depthbuffer=True,
+                            size=self.size)
         super(Renderer, self).__init__(**kwargs)
 
-        self.tle = iss
-        self.satrec = sgp4.api.Satrec.twoline2rv(*self.tle)
-        self.period = datetime.timedelta(days = 1.0/float(self.tle[1][52:63]))
-        self.obstime = datetime.datetime.now(datetime.timezone.utc)
-        self.orbitpath = get_orbit(self.satrec, START_TIME).flatten()
-        self.satpos = tuple(self.orbitpath[:3])
-        self.framerot = get_rotation(self.obstime)
+        self.sat = Satellite('ISS (ZARYA)')
 
         x0, y0, z0 = 0, 1, 2
         self.loc = np.array([x0, y0, z0])
@@ -113,7 +134,7 @@ class Renderer(Widget):
                 Color(0,0,0,1)
                 PushMatrix()
                 self.t1 = Translate(-x, -y, -z)
-                self.rot1 = Rotate(self.framerot, 0,1,0)
+                self.rot1 = Rotate(self.sat.framerot, 0,1,0)
                 UpdateNormalMatrix()
 
                 # Draw the TEME frame axes (x,y,z)
@@ -129,8 +150,9 @@ class Renderer(Widget):
 
                 # Draw the satellite's orbit path
                 ChangeState(lineColor=(0.,1.,1.,1.))
-                self.orbmesh = Mesh(vertices = list(self.orbitpath),
-                    indices = range(int(self.orbitpath.size / 3)),
+                self.orbmesh = Mesh(
+                    vertices = list(self.sat.orbitpath),
+                    indices = range(int(self.sat.orbitpath.size / 3)),
                     mode = 'line_strip',
                     fmt = [(b'v_pos', 3, 'float')])
                 PopMatrix()
@@ -156,8 +178,8 @@ class Renderer(Widget):
                 # Draw the satellite
                 PushMatrix()
                 self.t3 = Translate(-x, -y, -z)
-                self.rot3 = Rotate(self.framerot, 0,1,0)
-                self.t4 = Translate(*self.satpos)
+                self.rot3 = Rotate(self.sat.framerot, 0,1,0)
+                self.t4 = Translate(*self.sat.pos)
                 UpdateNormalMatrix()
                 self.satbox = Mesh(vertices=cube['v'], indices=cube['f'],
                          mode='triangles', fmt=cube['format'])
@@ -169,8 +191,8 @@ class Renderer(Widget):
 
         # Update the parameters every frame
         # Spin the model, update viewpoint/FOV etc
-        Clock.schedule_interval(self.update_glsl, 1 / 60.)
-        Clock.schedule_interval(self.update_satellite, 5.)
+        self.updateevt1 = Clock.schedule_interval(self.update_glsl, 1 / 60.)
+        self.updateevt2 = Clock.schedule_interval(self.update_satellite, 5.)
 
 
     def setup_gl_context(self, *args):
@@ -180,8 +202,11 @@ class Renderer(Widget):
         glDisable(GL_DEPTH_TEST)
 
     def update_glsl(self, delta):
-        asp = self.width / float(self.height)
-        proj = Matrix().view_clip(-asp/3, asp/3, -1/3, 1/3, 1, 50, 1)
+        rr = App.get_running_app().root
+        w, h = self.width, max(self.height, 1.)
+        asp, frac = w / h, rr.height / h
+        k = 3
+        proj = Matrix().view_clip(-asp/k, asp/k, -1/k, frac/k, 0.5, 50, 1)
         # The earth (0,0,0) is always centered on screen
         # You can move around it and zoom in/zoom out
         # Compute view matrix based on observer location
@@ -204,16 +229,26 @@ class Renderer(Widget):
         self.t3.x = -x; self.t3.y = -y; self.t3.z = -z
 
     def update_satellite(self, delta):
-        self.obstime = datetime.datetime.now(datetime.timezone.utc)
-        self.orbitpath = get_orbit(self.satrec, START_TIME).flatten()
-        self.satpos = x, y, z = tuple(self.orbitpath[:3])
-        fr = get_rotation(self.obstime)
-        self.rot1.angle += fr - self.framerot
-        self.rot3.angle += fr - self.framerot
-        self.framerot = fr
+        self.sat.obstime = datetime.datetime.now(datetime.timezone.utc)
+        self.sat.orbitpath = self.sat.get_orbit().flatten()
+        self.sat.pos = x, y, z = tuple(self.sat.orbitpath[:3])
+        fr = self.sat.get_rotation()
+        self.rot1.angle += fr - self.sat.framerot
+        self.rot3.angle += fr - self.sat.framerot
+        self.sat.framerot = fr
         self.t4.x = x; self.t4.y = y; self.t4.z = z
-        self.orbmesh.vertices = list(self.orbitpath)
-        self.indices = range(int(self.orbitpath.size / 3))
+        self.orbmesh.vertices = list(self.sat.orbitpath)
+        self.orbmesh.indices = range(int(self.sat.orbitpath.size / 3))
+
+    def select_sat(self, text):
+        self.sat = Satellite(text)
+        self.canvas.remove(self.instr)
+        self.simpleshadercanv.clear()
+        self.lambertshadercanv.clear()
+        self.updateevt1.cancel()
+        self.updateevt2.cancel()
+        self.setup_scene()
+
 
     def on_touch_move(self, touch):
         # Modify observer location in world space based on touch events
@@ -245,23 +280,26 @@ class Renderer(Widget):
                 elif touch.button == 'scrollup':
                     self.loc += step.astype(self.loc.dtype)
             else :
-                touch.grab(self)
                 self.current_touch = touch
-            return True
+            touch.grab(self)
+        return super(Renderer, self).on_touch_down(touch)
 
     def on_touch_up(self, touch):
         if touch.grab_current is self:
             self.current_touch = None
             touch.ungrab(self)
-            return True
+        return super(Renderer, self).on_touch_up(touch)
 
 
 
+class SatelliteApp(App):
 
-class RendererApp(App):
-    def build(self):
-        return Renderer()
+    def __init__(self, *args, **kwargs):
+        super(SatelliteApp, self).__init__(*args, **kwargs)
+        self.sat_choices = list(Satellite.TLEs.keys())
 
 
 if __name__ == "__main__":
-    RendererApp().run()
+    Satellite.load()
+    A = SatelliteApp()
+    A.run()

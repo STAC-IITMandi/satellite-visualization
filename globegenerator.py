@@ -78,7 +78,7 @@ spherical_mesh = {'v':vertices, 'f':faces, 'format':
 spherical_mesh_tex = {'v':vert_norm_tex, 'f':faces, 'format':
     [(b'v_pos', 3, 'float'),(b'v_norm', 3, 'float'),(b'v_texc', 2, 'float')]}
 
-c = 0.03
+c = 0.02
 cube_mesh = {'v':
         [-c,-c,-c, -1.,0.,0.,   -c,-c,c, -1.,0.,0., -c,c,c, -1.,0.,0.,  -c,c,-c, -1.,0.,0., 
          c,-c,-c, 1.,0.,0.,     c,-c,c, 1.,0.,0.,   c,c,c, 1.,0.,0.,    c,c,-c, 1.,0.,0., 
