@@ -35,7 +35,7 @@ class Satellite :
     TLEs = {}
 
     @staticmethod
-    def load(source='./celestrak-TLEs-100brightest.txt'):
+    def load(source):
         with open(source, 'r') as f:
             text = f.read()
         pat = re.compile(r"(.*)\n(1.*)\n(2.*)\n")
@@ -63,9 +63,9 @@ class Satellite :
         self.satrec = sgp4.api.Satrec.twoline2rv(*self.TLEs[name])
         self.period = datetime.timedelta(minutes = 2 * np.pi / self.satrec.nm)
         self.obstime = when or datetime.datetime.now(datetime.timezone.utc)
-        self.orbitpath = self.get_orbit(self.obstime).flatten()
+        self.orbitpath = self.get_orbit().flatten()
         self.pos = tuple(self.orbitpath[:3])
-        self.framerot = self.get_rotation(self.obstime)
+        self.framerot = self.get_rotation()
 
     def get_orbit(self, when=None):
         t = when or self.obstime
@@ -91,7 +91,27 @@ class Satellite :
         )
         angle = TEMEframerotation.earth_location.geodetic.lon.value - 90.0
         return angle
+        
+    def get_geoposition(self, when=None):
+        t = when or self.obstime
+        xyz = (self.pos[2] * self.satrec.radiusearthkm,
+               self.pos[0] * self.satrec.radiusearthkm,
+               self.pos[1] * self.satrec.radiusearthkm,
+              ) * u.km
+        geol = ac.TEME(xyz, obstime=t).transform_to(ac.ITRS(obstime=t)
+                ).earth_location.geodetic
+        return (geol.lat.value, geol.lon.value, geol.height.value)
 
+    def update(self, when=None):
+        if when:
+            self.obstime = when
+        jd,fr = sgp4.api.jday(*self.obstime.timetuple()[:6])
+        e, p, v = self.satrec.sgp4(jd, fr)
+        if e:
+            Logger.error(f"SGP4 : Computational error - {sgp4.api.SGP4_ERRORS[e]}")
+        Re = self.satrec.radiusearthkm
+        self.pos = (p[1]/Re, p[2]/Re, p[0]/Re)
+        
 
 
 class Renderer(Widget):
@@ -101,7 +121,7 @@ class Renderer(Widget):
                             size=self.size)
         super(Renderer, self).__init__(**kwargs)
 
-        self.sat = Satellite('ISS (ZARYA)')
+        self.sat = Satellite(App.get_running_app().default_sat)
 
         x0, y0, z0 = 0, 1, 2
         self.loc = np.array([x0, y0, z0])
@@ -192,7 +212,8 @@ class Renderer(Widget):
         # Update the parameters every frame
         # Spin the model, update viewpoint/FOV etc
         self.updateevt1 = Clock.schedule_interval(self.update_glsl, 1 / 60.)
-        self.updateevt2 = Clock.schedule_interval(self.update_satellite, 5.)
+        self.updateevt2 = Clock.schedule_interval(self.update_orbit, 10.)
+        self.updateevt3 = Clock.schedule_interval(self.update_sat, 0.5)
 
 
     def setup_gl_context(self, *args):
@@ -228,7 +249,7 @@ class Renderer(Widget):
         self.t2.x = -x; self.t2.y = -y; self.t2.z = -z
         self.t3.x = -x; self.t3.y = -y; self.t3.z = -z
 
-    def update_satellite(self, delta):
+    def update_orbit(self, delta):
         self.sat.obstime = datetime.datetime.now(datetime.timezone.utc)
         self.sat.orbitpath = self.sat.get_orbit().flatten()
         self.sat.pos = x, y, z = tuple(self.sat.orbitpath[:3])
@@ -240,6 +261,20 @@ class Renderer(Widget):
         self.orbmesh.vertices = list(self.sat.orbitpath)
         self.orbmesh.indices = range(int(self.sat.orbitpath.size / 3))
 
+    def update_sat(self, delta):
+        current_time = datetime.datetime.now()
+        self.sat.update(datetime.datetime.now(datetime.timezone.utc))
+        l1 = App.get_running_app().root.info1
+        l2 = App.get_running_app().root.info2
+        y = 2000 if self.sat.satrec.epochyr < 57 else 1900
+        td = datetime.datetime(y+self.sat.satrec.epochyr, 1, 1) + \
+            datetime.timedelta(days=self.sat.satrec.epochdays)
+        l1.text = f"[color=aaaaaa]TLE epoch {td.isoformat(' ')[:-7]}[/color]\n" + \
+            f"{current_time.isoformat(' ')[:-4]} Local\n" + \
+            f"{self.sat.obstime.isoformat(' ')[:-10]} UTC"
+        lat, long, alt = self.sat.get_geoposition()
+        l2.text = f"Lat   {lat:.5f}°\nLon   {long:.5f}°\nAlt   {alt:.3f} km"
+
     def select_sat(self, text):
         self.sat = Satellite(text)
         self.canvas.remove(self.instr)
@@ -247,6 +282,7 @@ class Renderer(Widget):
         self.lambertshadercanv.clear()
         self.updateevt1.cancel()
         self.updateevt2.cancel()
+        self.updateevt3.cancel()
         self.setup_scene()
 
 
@@ -297,9 +333,12 @@ class SatelliteApp(App):
     def __init__(self, *args, **kwargs):
         super(SatelliteApp, self).__init__(*args, **kwargs)
         self.sat_choices = list(Satellite.TLEs.keys())
+        self.default_sat = 'ISS (ZARYA)'
 
 
 if __name__ == "__main__":
-    Satellite.load()
+    # Satellite.load('./data/celestrak-TLEs-geosync.txt')
+    # Satellite.load('./data/celestrak-TLEs-gps_op.txt')
+    Satellite.load('./data/celestrak-TLEs-100brightest.txt')
     A = SatelliteApp()
     A.run()

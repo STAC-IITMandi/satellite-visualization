@@ -13,11 +13,11 @@ BoxLayout:
     BoxLayout:
         orientation: 'horizontal'
         size_hint_y: None
-        height: '50dp'
+        height: '60dp'
         id: topbar
         Spinner:
             id: listbtn
-            size_hint_x: 0.2
+            size_hint_x: 0.33
             text: "ISS (ZARYA)"
             # opacity: 0.5
             values: app.sat_choices
@@ -26,8 +26,9 @@ BoxLayout:
         Label:
             id: info1
             text: "Info"
-            size_hint_x: 0.5
+            size_hint_x: 0.34
             markup: True
+            font_size: '14dp'
             canvas.before:
                 Color:
                     rgba: 0.3, 0.3, 0.3, 0.9
@@ -37,8 +38,9 @@ BoxLayout:
         Label:
             id: info2
             text: "Info"
-            size_hint_x: 0.3
+            size_hint_x: 0.33
             markup: True
+            font_size: '14dp'
             canvas.before:
                 Color:
                     rgba: 0.3, 0.3, 0.3, 0.9
