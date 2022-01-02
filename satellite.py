@@ -111,51 +111,49 @@ class Satellite :
         return pos
 
 
-    def get_direction_in_sky(self, lat:float, long:float, alt:float = 0,
+    def direction_in_sky(self, lat:float, long:float, alt:float = 0,
             when:datetime.datetime=None) -> tuple[float,float,float]:
-        if when:
-            self.update(when, False)
         t = when or self.obstime
+        pos = self.update(when, False) if when else self.pos
         el = ac.EarthLocation.from_geodetic(long, lat, alt)
         Re = self.satrec.radiusearthkm
-        xyz = (self.pos[2]*Re, self.pos[0]*Re, self.pos[1]*Re,)
+        xyz = (pos[2]*Re, pos[0]*Re, pos[1]*Re,)
         aa = ac.TEME(xyz * u.km, obstime=t).transform_to(
             ac.AltAz(location=el, obstime=t)
         )
         return (aa.alt.value, aa.az.value, aa.distance.value)
 
 
-    def get_next_visible_from(self, lat:float, long:float, alt:float = 0,
-            horizonangle:float=0, maxdays:float=10) -> np.ndarray[datetime.datetime]:
-        
-        raise NotImplementedError # code below currently doesn't give right answers :(
+    def next_transits_from(self, lat:float, long:float, alt:float=0, 
+            horizonangle:float=5, start:datetime.datetime=None, maxdays:float=14, 
+            localtime=False) -> np.ndarray[np.datetime64]:
 
         el = ac.EarthLocation.from_geodetic(long, lat, alt)
         Re = self.satrec.radiusearthkm
-        T = self.period.seconds / 86400.0 
-        """ jd, fr = sgp4.api.jday(*self.obstime.timetuple()[:6])
-        frs, jds = np.modf(np.linspace(jd+fr, jd+fr+maxdays, int(90*maxdays/T)))
-        dtimes = astropy.time.Time(jds+frs, format='jd') """
-        dtimes = astropy.time.Time(self.obstime) + \
-            np.linspace(0, maxdays, int(90*maxdays/T)) * u.day
-        o1 = self.get_orbit(opengl_format=False, 
-            from_jdates=(dtimes.jd1, dtimes.jd2))
+        t = start or self.obstime.replace(tzinfo=None)
+        detail = 90
+        dtimes = astropy.time.Time(
+            np.arange(t, t+datetime.timedelta(days=maxdays), self.period/detail)
+        )
+        o1 = self.get_orbit(opengl_format=False, from_jdates=(dtimes.jd1, dtimes.jd2))
 
         # Eliminate values where it definitely won't pass over based on latitude
         # Then exact computation performed for the remaining
         geol = ac.TEME(o1.T * u.km, obstime=dtimes).transform_to(
-            ac.ITRS(obstime=dtimes)).earth_location.geodetic
-        approx_fov = np.arccos(Re / (geol.height.value + Re)) * 180 / np.pi
+            ac.ITRS(obstime=dtimes)).earth_location
+        approx_fov = np.degrees(np.arccos(Re / (geol.height.value + Re)))
         subset = np.where(np.abs(geol.lat.value - lat) <= approx_fov)[0]
 
-        selection = ac.TEME(o1[subset].T * u.km, obstime=dtimes[subset])
-        aa = selection.transform_to(ac.AltAz(location=el, obstime=dtimes[subset]))
-
-        x = dtimes[subset][np.where(aa.alt.value > horizonangle)[0]].to_datetime()
-        return x
-        """ for dt in dtimes[subset].to_datetime():
-            if self.get_direction_in_sky(lat, long, alt, dt)[0] > horizonangle:
-                return dt """
+        if len(subset):
+            selection = ac.TEME(o1[subset].T * u.km, obstime=dtimes[subset])
+            aa = selection.transform_to(ac.AltAz(location=el, obstime=dtimes[subset]))
+            x = dtimes[subset][np.where(aa.alt.value > horizonangle)[0]]
+            if localtime :
+                offset = datetime.datetime.now() - datetime.datetime.utcnow()
+                x += offset
+            return x.value
+        else :
+            return np.array([], dtype='datetime64[ns]')
 
 
 
@@ -163,7 +161,3 @@ class Satellite :
 if __name__ == "__main__":
     Satellite.load('./data/celestrak-TLEs-100brightest.txt')
     s = Satellite('ISS (ZARYA)')
-    # x = s.get_next_visible_from(12.97, 77.59)
-    # y = s.get_direction_in_sky(12.97, 77.59, 
-    #     when=datetime.datetime.fromisoformat('2021-12-21T21:58:43.277'))
-    # print(x)

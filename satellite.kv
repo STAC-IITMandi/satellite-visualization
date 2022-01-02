@@ -1,13 +1,26 @@
 #:kivy 2.0.0
 
+<BGLabel@Label>:
+    canvas.before:
+        Color:
+            rgba: 0.3, 0.3, 0.3, 0.9
+        Rectangle:
+            size: self.size
+            pos: self.pos
+
+
 BoxLayout:
 
     listbtn: listbtn
     stencil: stencil
     renderr: renderr
     topbar: topbar
+    locbar: locbar
+    latinput: latinput
+    longinput: longinput
     info1: info1
     info2: info2
+    info3: info3
 
     orientation: 'vertical'
     BoxLayout:
@@ -23,30 +36,18 @@ BoxLayout:
             values: app.sat_choices
             on_text:
                 renderr.select_sat(self.text)
-        Label:
+        BGLabel:
             id: info1
             text: "Info"
             size_hint_x: 0.34
             markup: True
-            font_size: '14dp'
-            canvas.before:
-                Color:
-                    rgba: 0.3, 0.3, 0.3, 0.9
-                Rectangle:
-                    size: self.size
-                    pos: self.pos
-        Label:
+            font_size: '14sp'
+        BGLabel:
             id: info2
             text: "Info"
             size_hint_x: 0.33
             markup: True
-            font_size: '14dp'
-            canvas.before:
-                Color:
-                    rgba: 0.3, 0.3, 0.3, 0.9
-                Rectangle:
-                    size: self.size
-                    pos: self.pos
+            font_size: '14sp'
 
     StencilView:
         width: root.width
@@ -62,4 +63,34 @@ BoxLayout:
                 id:dummy1
                 width:0
                 height:0
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: '45dp'
+        id: locbar
+        BGLabel:
+            text: "Location"
+            font_size: '14sp'
+            size_hint_x: 0.1
+        NumEntry:
+            id: latinput
+            minval: -90
+            maxval: 90
+            hint_text: "Latitude °"
+            size_hint_x: 0.2
+            ontext_callbacks: [renderr.update_latlong]
+        NumEntry:
+            id: longinput
+            minval: -90
+            maxval: 90
+            hint_text: "Longitude °"
+            size_hint_x: 0.2
+            ontext_callbacks: [renderr.update_latlong]
+        BGLabel:
+            id: info3
+            markup: True
+            text: "Calculating Next transit..."
+            font_size: '14sp'
+            size_hint_x: 0.5
+
 

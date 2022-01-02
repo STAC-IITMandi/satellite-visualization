@@ -3,12 +3,17 @@ from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.uix.widget import Widget
+from kivy.uix.textinput import TextInput
+from kivy.logger import Logger
 from kivy.graphics.transformation import Matrix
 from kivy.graphics.opengl import glEnable, glDisable, GL_DEPTH_TEST
 from kivy.graphics import *
+from kivy.properties import *
 
 import numpy as np
 import datetime
+import threading
+import re
 
 from globegenerator import spherical_mesh_tex as sph
 from globegenerator import cube_mesh as cube
@@ -16,12 +21,60 @@ from satellite import Satellite
 
 
 
-def normalise(vec, up:bool=True) -> np.ndarray :
+def normalise(vec:np.ndarray, up:bool=True) -> np.ndarray :
     v = vec / np.linalg.norm(vec)
     if up and vec[1] < 0:
         return -v
     else :
         return v
+
+
+class NumEntry(TextInput):
+    
+    autovalidate = BooleanProperty(True)
+    valid = BooleanProperty(False)
+    ontext_callbacks = ListProperty([])
+    minval = NumericProperty(None, allownone=True)
+    maxval = NumericProperty(None, allownone=True)
+
+    def __init__(self, **kwargs):
+        super(NumEntry, self).__init__(**kwargs)
+        self.multiline = False
+        self.write_tab = False
+
+    def insert_text(self, substring:str, from_undo:bool=False) -> str:
+        if re.search("[^\d\.\+\-eE]", substring):
+            return super(NumEntry, self).insert_text('', from_undo=from_undo)
+        return super(NumEntry, self).insert_text(substring, from_undo=from_undo)
+
+    def on_text(self, widget, text:str):
+        if self.autovalidate:
+            try:
+                f = float(text)
+                if self.minval is not None and f < self.minval :
+                    self.valid = False
+                elif self.maxval is not None and f > self.maxval :
+                    self.valid = False
+                else :
+                    self.valid = True
+                    for fn in self.ontext_callbacks:
+                        try:
+                            fn(widget, text)
+                        except Exception as e:
+                            Logger.error(f'Callback : {fn} from {self} failed', 
+                            exc_info=str(e))
+            except ValueError:
+                self.valid = False
+
+    def on_valid(self, widget, val):
+        self.foreground_color = [0,0,0,1] if val else [1,0,0,1]
+
+    def get(self):
+        try:
+            return float(self.text)
+        except ValueError:
+            return None
+
 
 
 
@@ -33,6 +86,9 @@ class Renderer(Widget):
         super(Renderer, self).__init__(**kwargs)
 
         self.sat = Satellite(App.get_running_app().default_sat)
+        self.loc_lat = None
+        self.loc_long = None
+        self.update2_thread = None
 
         x0, y0, z0 = 0, 1, 2
         self.loc = np.array([x0, y0, z0])
@@ -140,10 +196,11 @@ class Renderer(Widget):
         # Necessary take into account its actual size/pos and aspect ratio
         # To prevent distortion or overlap when other widgets are present
         rr = App.get_running_app().root
-        w, h = self.width, max(self.height, 1.)
-        asp, frac = w / h, rr.height / h
-        k = 3
-        proj = Matrix().view_clip(-asp/k, asp/k, -1/k, frac/k, 0.5, 50, 1)
+        w, h, h0 = self.width, max(self.height, 1.), rr.height
+        px, py = self.pos
+        asp, frac_t, frac_b = w/h,  2*(h0-py)/h-1,  2*(0-py)/h-1
+        k = 4
+        proj = Matrix().view_clip(-asp/k, asp/k, frac_b/k, frac_t/k, 0.5, 50, 1)
 
         # The earth (0,0,0) is always centered on screen
         # You can move around it and zoom in/zoom out
@@ -194,6 +251,35 @@ class Renderer(Widget):
             f"{self.sat.obstime.isoformat(' ')[:-10]} UTC"
         lat, long, alt = self.sat.get_geoposition()
         l2.text = f"Lat   {lat:.5f}°\nLon   {long:.5f}°\nAlt   {alt:.3f} km"
+        self.update_sat_2()
+
+
+    def update_sat_2(self, force=False):
+        # Find next_transits_from(self.loc_*) if that valid; and update the GUI
+        # Expensive computation (takes 1-2 sec) -> seperate thread to reduce lag
+        l3 = App.get_running_app().root.info3
+        ha, md = 5, 14
+        def recompute(lat, long):
+            l3.text = "Calculating Next transit..."
+            t = self.sat.next_transits_from(lat, long, 
+                horizonangle=ha, maxdays=md, localtime=False,)
+            if len(t) :
+                l3.text = f"Next transit for {lat}°, {long}°\n at " + \
+                    str(t[0])[:19].replace('T',' ') + " UTC"
+            else :
+                l3.text = f"Not visible from {lat}°, {long}° in the next {md} days"
+        
+        if type(self.loc_lat) is float and type(self.loc_long) is float:
+            al, az, di = self.sat.direction_in_sky(self.loc_lat, self.loc_long)
+            if al > ha :
+                l3.text = f"Currently visible from {self.loc_lat}°, {self.loc_long}°" + \
+                    f"\nAltitude {al:.2f}°  Azimuth {az:.2f}°"
+            elif force :
+                if not ( isinstance(self.update2_thread, threading.Thread) and \
+                              self.update2_thread.is_alive() ):
+                    self.update2_thread = threading.Thread(target=recompute,
+                                        args=(self.loc_lat, self.loc_long))
+                    self.update2_thread.start()
 
 
     def select_sat(self, text):
@@ -205,6 +291,16 @@ class Renderer(Widget):
         self.updateevt2.cancel()
         self.updateevt3.cancel()
         self.setup_scene()
+        self.update_sat_2(True)
+
+
+    def update_latlong(self, widget, text):
+        rr = App.get_running_app().root
+        if widget is rr.latinput.__self__ :
+            self.loc_lat = widget.get()
+        elif widget is rr.longinput.__self__ :
+            self.loc_long = widget.get()
+        self.update_sat_2(True)
 
 
     def on_touch_move(self, touch):
