@@ -81,15 +81,15 @@ BoxLayout:
             ontext_callbacks: [renderr.update_latlong]
         NumEntry:
             id: longinput
-            minval: -90
-            maxval: 90
+            minval: -180
+            maxval: 180
             hint_text: "Longitude °"
             size_hint_x: 0.2
             ontext_callbacks: [renderr.update_latlong]
         BGLabel:
             id: info3
             markup: True
-            text: "Calculating Next transit..."
+            text: "Enter a Location to check visibility"
             font_size: '14sp'
             size_hint_x: 0.5
 

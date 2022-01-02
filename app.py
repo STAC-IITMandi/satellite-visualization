@@ -1,6 +1,6 @@
 
 from kivy.app import App
-from kivy.clock import Clock
+from kivy.clock import Clock, ClockEvent
 from kivy.core.window import Window
 from kivy.uix.widget import Widget
 from kivy.uix.textinput import TextInput
@@ -14,6 +14,7 @@ import numpy as np
 import datetime
 import threading
 import re
+import sys
 
 from globegenerator import spherical_mesh_tex as sph
 from globegenerator import cube_mesh as cube
@@ -89,6 +90,7 @@ class Renderer(Widget):
         self.loc_lat = None
         self.loc_long = None
         self.update2_thread = None
+        self.update2_callback = None
 
         x0, y0, z0 = 0, 1, 2
         self.loc = np.array([x0, y0, z0])
@@ -264,7 +266,7 @@ class Renderer(Widget):
             t = self.sat.next_transits_from(lat, long, 
                 horizonangle=ha, maxdays=md, localtime=False,)
             if len(t) :
-                l3.text = f"Next transit for {lat}°, {long}°\n at " + \
+                l3.text = f"Next transit for {lat}°, {long}°\nat " + \
                     str(t[0])[:19].replace('T',' ') + " UTC"
             else :
                 l3.text = f"Not visible from {lat}°, {long}° in the next {md} days"
@@ -274,12 +276,13 @@ class Renderer(Widget):
             if al > ha :
                 l3.text = f"Currently visible from {self.loc_lat}°, {self.loc_long}°" + \
                     f"\nAltitude {al:.2f}°  Azimuth {az:.2f}°"
-            elif force :
+            elif force or ('Currently visible' in l3.text):
                 if not ( isinstance(self.update2_thread, threading.Thread) and \
                               self.update2_thread.is_alive() ):
                     self.update2_thread = threading.Thread(target=recompute,
                                         args=(self.loc_lat, self.loc_long))
                     self.update2_thread.start()
+        self.update2_callback = None
 
 
     def select_sat(self, text):
@@ -300,10 +303,15 @@ class Renderer(Widget):
             self.loc_lat = widget.get()
         elif widget is rr.longinput.__self__ :
             self.loc_long = widget.get()
-        self.update_sat_2(True)
+        if isinstance(self.update2_callback, ClockEvent) :
+            self.update2_callback.cancel()
+        self.update2_callback = Clock.schedule_once(
+            lambda dt: self.update_sat_2(True), 1.0)
 
 
     def on_touch_move(self, touch):
+        if not self.collide_point(*touch.pos):
+            return
         # Modify observer location in world space based on touch events
         sensitivity = 200
         dx, dy = touch.dx/sensitivity, touch.dy/sensitivity
@@ -352,7 +360,13 @@ class SatelliteApp(App):
     def __init__(self, *args, **kwargs):
         super(SatelliteApp, self).__init__(*args, **kwargs)
         self.sat_choices = list(Satellite.TLEs.keys())
-        self.default_sat = 'ISS (ZARYA)'
+        if 'ISS (ZARYA)' in self.sat_choices :
+            self.default_sat = 'ISS (ZARYA)'
+        elif len(self.sat_choices) :
+            self.default_sat = self.sat_choices[0]
+        else :
+            Logger.error('Satellite: A data file was not loaded or had no valid TLEs')
+            sys.exit(1)
 
 
 
@@ -360,7 +374,8 @@ if __name__ == '__main__' :
 
     # Satellite.load('./data/celestrak-TLEs-geosync.txt')
     # Satellite.load('./data/celestrak-TLEs-gps_op.txt')
-    Satellite.load('./data/celestrak-TLEs-100brightest.txt')
+    # Satellite.load('./data/celestrak-TLEs-100brightest.txt')
+    Satellite.load('./data/misc-80.txt')
     A = SatelliteApp()
     A.run()
 

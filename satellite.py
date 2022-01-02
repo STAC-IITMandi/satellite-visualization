@@ -24,7 +24,7 @@ class Satellite :
     def load(source:typing.Union[str, bytes, os.PathLike]):
         with open(source, 'r') as f:
             text = f.read()
-        pat = re.compile(r"(.*)\n(1.*)\n(2.*)\n")
+        pat = re.compile(r"(.{1,69})\n(1[\w\s\.\-\+]{68})\n(2[\w\s\.\-\+]{68})\n")
         for match in re.finditer(pat, text):
             n, l1, l2 = match.groups()
             n = n.strip()
@@ -39,7 +39,7 @@ class Satellite :
                     Satellite.TLEs[s] = Satellite.TLEs[s][0]
                 else :
                     for i, si in enumerate(Satellite.TLEs[s], 1):
-                        d[s+f" ({i})"] = si
+                        d[s+f" [{i}]"] = si
                     duplicates.append(s)
         for s in duplicates :
             Satellite.TLEs.pop(s)
@@ -62,7 +62,7 @@ class Satellite :
         if not from_jdates:
             t = when or self.obstime
             jd,fr=sgp4.api.jday(*t.timetuple()[:6])
-            T = self.period.seconds / 86400.0 
+            T = self.period.total_seconds() / 86400.0 
             frs, jds = np.modf(np.linspace(jd+fr+0.5, jd+fr+0.5+T, detail))
             jds -= 0.5
         else :
@@ -126,7 +126,7 @@ class Satellite :
 
     def next_transits_from(self, lat:float, long:float, alt:float=0, 
             horizonangle:float=5, start:datetime.datetime=None, maxdays:float=14, 
-            localtime=False) -> np.ndarray[np.datetime64]:
+            localtime:bool=False) -> np.ndarray[np.datetime64]:
 
         el = ac.EarthLocation.from_geodetic(long, lat, alt)
         Re = self.satrec.radiusearthkm

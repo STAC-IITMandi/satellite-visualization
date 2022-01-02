@@ -9,6 +9,8 @@ This is developed upon a sample solution to the *Atlas* astro-hackathon conducte
 You can run this code on your system with an installation of Python 3.7 or newer :
 
 1. Clone this repository locally and `cd` into its folder.
+
+        git clone https://github.com/STAC-IITMandi/satellite-visualization.git && cd satellite-visualization
 2. It is [recommended](https://kivy.org/doc/stable/gettingstarted/installation.html#create-virtual-environment) to install Kivy (one of the dependencies) in a virtual environment. <br> Run `python -m venv .` to create one in the same folder.
 3. [Activate](https://docs.python.org/3/tutorial/venv.html#creating-virtual-environments) the venv and then install the dependencies, as listed below. All of them are installable via `pip`/PyPI.
 4. Run `python app.py`
@@ -18,7 +20,7 @@ You can run this code on your system with an installation of Python 3.7 or newer
 ### Dependencies
 
 ```
-numpy>=1.19.0
+numpy>=1.17.0
 kivy>=2.0.0
 astropy>=4.3.0
 sgp4>=2.20
@@ -36,7 +38,7 @@ Links : [numpy](https://numpy.org/install/), [kivy](https://kivy.org/#home), [as
 
 The app propagates the satellite's trajectory by itself, using the `sgp4` library, based on the Two-Line Element Set (TLE) format as source for the orbital parameters. Theoretically, any earth-orbiting small body's orbit can be calculated, given its valid TLE.
 
-To perform the complex transformations between the results of SGP4 propagation (position in a cartesian intertial frame of reference), and Earth-based coordinates such as Latitude/Longitude or Altitude/Azimuth, `astropy` is used.
+To perform the complex transformations between the results of SGP4 propagation (position in a cartesian inertial frame of reference), and Earth-based coordinates such as Latitude/Longitude or Altitude/Azimuth, `astropy` is used.
 
 Currently, the TLE sets are in static text files, which are not updated by the app. Due to gradually increasing [errors](https://en.wikipedia.org/wiki/Simplified_perturbations_models#cite_note-revisiting-3), the app's predictions will become noticeably inaccurate within a few days. They must be refreshed separately, on the timescale of days (which is how often updated TLEs are usually made publicly available). This is an example to automate fetching new data from their website every alternate day :
 ```shell
