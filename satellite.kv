@@ -18,6 +18,7 @@ BoxLayout:
     locbar: locbar
     latinput: latinput
     longinput: longinput
+    rotationswitch: rotationswitch
     info1: info1
     info2: info2
     info3: info3
@@ -81,8 +82,8 @@ BoxLayout:
             ontext_callbacks: [renderr.update_latlong]
         NumEntry:
             id: longinput
-            minval: -180
-            maxval: 180
+            minval: -360
+            maxval: 360
             hint_text: "Longitude °"
             size_hint_x: 0.2
             ontext_callbacks: [renderr.update_latlong]
@@ -91,6 +92,16 @@ BoxLayout:
             markup: True
             text: "Enter a Location to check visibility"
             font_size: '14sp'
-            size_hint_x: 0.5
+            size_hint_x: 0.4
+        ToggleButton:
+            id: rotationswitch
+            size_hint_x: 0.1
+            text: "Spin"
+            state: 'down'
+            on_state: renderr.togglerotation(self.state == 'down')
+            background_down: "atlas://data/images/defaulttheme/button"
+            background_normal: "atlas://data/images/defaulttheme/button_disabled"
+        
+
 
 

@@ -20,6 +20,8 @@ class Satellite :
 
     TLEs = {}
 
+    WARN_AGE = datetime.timedelta(days=21)
+
     @staticmethod
     def load(source:typing.Union[str, bytes, os.PathLike]):
         with open(source, 'r') as f:
@@ -46,14 +48,34 @@ class Satellite :
         Satellite.TLEs = {**Satellite.TLEs, **d}
     
 
-    def __init__(self, name:str, when:datetime.datetime=None):
+    def __init__(self, name:str, when:datetime.datetime=None, warn:bool=False):
         self.name = name
+        self._warn = True   # Warn about old/inaccurate TLEs on instantiation
         self.satrec = sgp4.api.Satrec.twoline2rv(*self.TLEs[name])
+        y = 2000 if self.satrec.epochyr < 57 else 1900
+        self.tle_epoch = datetime.datetime(y+self.satrec.epochyr, 1, 1) + \
+            datetime.timedelta(days=self.satrec.epochdays)
+        self.norad_catalog_num = self.TLEs[name][0][2:7]
         self.period = datetime.timedelta(minutes = 2 * np.pi / self.satrec.nm)
         self.obstime = when or datetime.datetime.now(datetime.timezone.utc)
         self.orbitpath = self.get_orbit().flatten()
         self.pos = tuple(self.orbitpath[:3])
         self.framerot = self.get_earthrotation()
+        self._warn = warn   # User's choice for further updates
+
+    @property
+    def obstime(self):
+        return self._obstime
+    
+    @obstime.setter
+    def obstime(self, val:datetime.datetime):
+        if not isinstance(val, datetime.datetime):
+            raise ValueError("obstime must be a python datetime object")
+        if hasattr(self, 'tle_epoch') and self._warn and \
+           abs(val.replace(tzinfo=None) - self.tle_epoch) > self.WARN_AGE :
+            Logger.warning(f"Satellite: TLE age of '{self.name}' has "+\
+                f"exceeded {self.WARN_AGE.total_seconds()/86400} days")
+        self._obstime = val
 
 
     def get_orbit(self, when:datetime.datetime=None, detail:int=360,
@@ -94,6 +116,19 @@ class Satellite :
         geol = ac.TEME(xyz * u.km, obstime=t).transform_to(ac.ITRS(obstime=t)
                 ).earth_location.geodetic
         return (geol.lat.value, geol.lon.value, geol.height.value)
+
+
+    def get_cartesianposition(self, lat:float, long:float, alt_rf:float=0.05,
+            when:datetime.datetime=None, opengl_format:bool=True, ) -> tuple[float,float,float]:
+        t = when or self._obstime
+        Re = self.satrec.radiusearthkm
+        g = ac.ITRS(long*u.deg, lat*u.deg, alt_rf*Re*u.km, obstime=t,
+                    representation_type='wgs84geodetic')
+        teme = g.transform_to(ac.TEME(obstime=t)).cartesian.xyz.to(u.km).value
+        if opengl_format:
+            return tuple(np.array((teme[1],teme[2],teme[0])) / Re)
+        else :
+            return tuple(teme)
 
 
     def update(self, when:datetime.datetime=None, set_new:bool=True) -> tuple[float,float,float]:

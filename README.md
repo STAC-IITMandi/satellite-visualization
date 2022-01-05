@@ -11,8 +11,8 @@ You can run this code on your system with an installation of Python 3.7 or newer
 1. Clone this repository locally and `cd` into its folder.
 
         git clone https://github.com/STAC-IITMandi/satellite-visualization.git && cd satellite-visualization
-2. It is [recommended](https://kivy.org/doc/stable/gettingstarted/installation.html#create-virtual-environment) to install Kivy (one of the dependencies) in a virtual environment. <br> Run `python -m venv .` to create one in the same folder.
-3. [Activate](https://docs.python.org/3/tutorial/venv.html#creating-virtual-environments) the venv and then install the dependencies, as listed below. All of them are installable via `pip`/PyPI.
+2. It is strongly [recommended](https://kivy.org/doc/stable/gettingstarted/installation.html#create-virtual-environment) to install Kivy (one of the dependencies) in a virtual environment. <br> Run `python -m venv ./venv` to create a new one and place its files in a subfolder `venv` (will remain untracked due to `.gitignore`).
+3. [Activate](https://docs.python.org/3/tutorial/venv.html#creating-virtual-environments) the venv and then install the dependencies, as listed below. All of them are installable from PyPI (`pip install -r requirements.txt`).
 4. Run `python app.py`
 5. The contents of the `data/` folder will very likely be outdated. If the displayed TLE epoch in the app window is more than a week old, (or the satellite position incorrect), you can update the values as decribed in the **Implementation** section below. Then restart the app.
 
