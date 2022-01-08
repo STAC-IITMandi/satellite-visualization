@@ -32,6 +32,9 @@ def normalise(vec:np.ndarray, up:bool=True) -> np.ndarray :
 
 
 class NumEntry(TextInput):
+    """Custom textbox that allows the user only to enter
+    characters that can specify a floating point number
+    and also validates the contained numeric expression"""
     
     autovalidate = BooleanProperty(True)
     valid = BooleanProperty(False)
@@ -77,7 +80,26 @@ class NumEntry(TextInput):
 
 
 class Renderer(Widget):
+    """
+    The main widget - creates, manages and updates the entire 3D scene. 
+    Its `canvas` is a RenderContext that contains 2 more canvases with
+    their own shaders. One is a simple shader to colour all points with
+    the same RGBA value. The other supports textures and illumination
+    from a specific direction in world space.
 
+    `self.sat` is the `Satellite` object which is being currently simulated
+    by the Renderer. All its computations are also called in the OpenGL
+    update loops (3 independent cycles at different frequencies as required)
+
+    Additionally, this widget also stores information about the current
+    Earth location etc, & uses it to update the other widgets which have no
+    class definition in Python (only UI in the `.kv` file)
+
+    The Earth is at the origin (0,0,0) in world space and always centered
+    in the middle of the widget on-screen. The camera (position determined
+    by `self.loc`) can be rotated around it and zoomed in/out, always looking
+    at the Earth. Camera motion is handled by responding to kivy `Touch` events.
+    """
 
     def __init__(self, **kwargs):
         self.canvas = RenderContext(compute_normal_mat=True, 
@@ -112,7 +134,9 @@ class Renderer(Widget):
 
 
     def setup_scene(self):
+
         self.canvas.add(self.instr)
+
         with self.canvas:
             self.cb = Callback(self.setup_gl_context)
             PushMatrix()
@@ -123,10 +147,11 @@ class Renderer(Widget):
                 Color(0,0,0,1)
                 PushMatrix()
                 self.t1 = Translate(-x, -y, -z)
-                self.rot1 = Rotate(self.sat.framerot, 0,1,0)
+                self.rot1 = Rotate(0, 0,1,0)
                 UpdateNormalMatrix()
 
                 # Draw the TEME frame axes (x,y,z)
+                # These are aligned with OpenGL, although in TEME `z` is the "vertical"
                 ChangeState(lineColor=(1.,0.,0.,1.))
                 self.aX = Mesh(vertices=[0.,0.,0.,self.ax_len,0.,0.], indices=[0,1],
                         mode='lines', fmt=[(b'v_pos', 3, 'float')])
@@ -137,11 +162,6 @@ class Renderer(Widget):
                 self.aZ = Mesh(vertices=[0.,0.,0.,0.,0.,self.ax_len], indices=[0,1],
                         mode='lines', fmt=[(b'v_pos', 3, 'float')])
 
-                # Draw line at the current GeoLocation (lat/long)
-                ChangeState(lineColor=(1.,1.,0.,1.))
-                self.geoptr = Mesh(vertices=[], indices=[0,1],
-                        mode='lines', fmt=[(b'v_pos', 3, 'float')])
-
                 # Draw the satellite's orbit path
                 ChangeState(lineColor=(0.,1.,1.,1.))
                 self.orbmesh = Mesh(
@@ -149,30 +169,46 @@ class Renderer(Widget):
                     indices = range(int(self.sat.orbitpath.size / 3)),
                     mode = 'line_strip',
                     fmt = [(b'v_pos', 3, 'float')])
+
+                # Draw line at the current GeoLocation (lat/long)
+                # This needs to rotate with the earth (but rot1 still applies here)
+                self.rot4 = Rotate(0, 0,1,0)
+                ChangeState(lineColor=(1.,1.,0.,1.))
+                self.geoptr = Mesh(vertices=[], indices=[0,1],
+                        mode='lines', fmt=[(b'v_pos', 3, 'float')])
+
                 PopMatrix()
                 Callback(self.reset_gl_context)
 
             
+            self.ldir = Matrix().rotate(np.radians(self.sat.framerot), 0,1,0
+                ).transform_point(*self.sat.get_sunposition()) 
+
             with self.lambertshadercanv :
                 Callback(self.setup_gl_context)
                 Color(1,1,1,1)
 
                 # Draw the Earth
+                BindTexture(source=resource_find('earth/night.jpg'), 
+                            index=1)
+                self.lambertshadercanv['secondTexture'] = 1
+                ChangeState(useDarkTexture=int(True))
                 PushMatrix()
                 self.t2 = Translate(-x, -y, -z)
-                self.rot2 = Rotate(0,0,1,0)
+                self.rot2 = Rotate(-self.sat.framerot,0,1,0)
                 UpdateNormalMatrix()
                 self.globe = Mesh(vertices=sph['v'],
                     indices=sph['f'], 
                     mode='triangles', fmt=sph['format'],
-                    source=resource_find('world.topo.bathy.200412.3x5400x2700.jpg'),
+                    source=resource_find('earth/day.jpg'),
                 )
                 PopMatrix()
+                ChangeState(useDarkTexture=int(False))
 
                 # Draw the satellite
                 PushMatrix()
                 self.t3 = Translate(-x, -y, -z)
-                self.rot3 = Rotate(self.sat.framerot, 0,1,0)
+                self.rot3 = Rotate(0, 0,1,0)
                 self.t4 = Translate(*self.sat.pos)
                 UpdateNormalMatrix()
                 self.satbox = Mesh(vertices=cube['v'], indices=cube['f'],
@@ -186,7 +222,7 @@ class Renderer(Widget):
         # Update the parameters every frame
         # Spin the model, update viewpoint/FOV etc
         self.updateevt1 = Clock.schedule_interval(self.update_glsl, 1 / 60.)
-        self.updateevt2 = Clock.schedule_interval(self.update_orbit, 5.)
+        self.updateevt2 = Clock.schedule_interval(self.update_orbit, 3.)
         self.updateevt3 = Clock.schedule_interval(self.update_sat, 0.5)
 
 
@@ -218,33 +254,39 @@ class Renderer(Widget):
         p, q, r = self.vertical
         persp = Matrix().look_at(x, y, z, 0., 0., 0., p, q, r)
 
-        self.lambertshadercanv['theTexture'] = 0
         self.canvas['projection_mat'] = proj
         self.simpleshadercanv['projection_mat'] = proj
         self.lambertshadercanv['projection_mat'] = proj
         self.canvas['modelview_mat'] = persp
         self.simpleshadercanv['modelview_mat'] = persp
         self.lambertshadercanv['modelview_mat'] = persp
+        self.lambertshadercanv['light_direction'] = self.ldir
+
         if self.modelrotate and not self.current_touches:
             self.rot1.angle += delta * 50
             self.rot2.angle += delta * 50
             self.rot3.angle += delta * 50
+
         self.t1.x = -x; self.t1.y = -y; self.t1.z = -z
         self.t2.x = -x; self.t2.y = -y; self.t2.z = -z
         self.t3.x = -x; self.t3.y = -y; self.t3.z = -z
 
 
     def update_orbit(self, delta):
-        self.sat.obstime = datetime.datetime.now(datetime.timezone.utc)
         self.sat.orbitpath = self.sat.get_orbit().flatten()
         self.sat.pos = x, y, z = tuple(self.sat.orbitpath[:3])
-        fr = self.sat.get_earthrotation()
-        self.rot1.angle += fr - self.sat.framerot
-        self.rot3.angle += fr - self.sat.framerot
-        self.sat.framerot = fr
         self.t4.x = x; self.t4.y = y; self.t4.z = z
+
+        fr = self.sat.get_earthrotation()
+        self.rot2.angle += self.sat.framerot - fr
+        self.rot4.angle += self.sat.framerot - fr
+        self.sat.framerot = fr
+
         self.orbmesh.vertices = list(self.sat.orbitpath)
         self.orbmesh.indices = range(int(self.sat.orbitpath.size / 3))
+
+        self.ldir = Matrix().rotate(np.radians(self.sat.framerot), 0,1,0
+                ).transform_point(*self.sat.get_sunposition())
 
 
     def update_sat(self, delta):
@@ -256,7 +298,7 @@ class Renderer(Widget):
             f"{self.sat.tle_epoch.isoformat(' ')[:-7]}[/color]\n" + \
             f"{current_time.isoformat(' ')[:-4]} Local\n" + \
             f"{self.sat.obstime.isoformat(' ')[:-10]} UTC"
-        lat, long, alt = self.sat.get_geoposition()
+        lat, long, alt = self.sat.geolocation()
         l2.text = f"Lat   {lat:.5f}°\nLon   {long:.5f}°\nAlt   {alt:.3f} km"
         self.update_sat_2()
 
@@ -265,7 +307,7 @@ class Renderer(Widget):
         # Find next_transits_from(self.loc_*) if that valid; and update the GUI
         # Expensive computation (takes 1-2 sec) -> seperate thread to reduce lag
         l3 = App.get_running_app().root.info3
-        ha, md = 5, 10
+        ha, md = 5, 14
         def recompute(lat, long):
             l3.text = "Calculating Next transit..."
             t = self.sat.next_transits_from(lat, long, 
@@ -309,13 +351,18 @@ class Renderer(Widget):
             self.geo_lat = widget.get()
         elif widget is rr.longinput.__self__ :
             self.geo_long = widget.get()
+            
         if rr.latinput.valid and rr.longinput.valid:
+            # Recalculate transits from new location
             if isinstance(self.update2_callback, ClockEvent) :
                 self.update2_callback.cancel()
             self.update2_callback = Clock.schedule_once(
                 lambda dt: self.update_sat_2(True), 1.0)
+
+            # reset & adjust the location marker
             self.geoptr.vertices = [0., 0., 0., 
                 *self.sat.get_cartesianposition(self.geo_lat, self.geo_long)]
+            self.rot4.angle = 0
         else :
             self.geoptr.vertices = []
 

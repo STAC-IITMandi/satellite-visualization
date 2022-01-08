@@ -14,9 +14,27 @@ import datetime
 import typing
 import os
 
+# Use minimal sized source for `get_sunposition`
+# High accuracy not required
+ac.solar_system_ephemeris.set('de432s')
 
 
 class Satellite :
+    """
+    A Satellite object holds the position, orbit, time/epoch
+    and many other details for a satellite being tracked by the app.
+    The main analytical data is still stored in the `sgp4.wrapper.Satrec`
+    object (`self.satrec`), with computations performed by SGP4 library.
+    That is initialised from a TLE element set loaded beforehand
+    into `self.TLEs` from a file, using the staticmethod `load`.
+
+    Most methods here return coordinates/values in the format used
+    by OpenGL and the shaders/3D coordinate system of the app.
+
+    Units : All time arguments to methods are in python `datetime.datetime`.
+            Times are also always in UTC *only* (+00:00).
+            Angles in degrees (+ve North or East for latitude/longitude).
+    """
 
     TLEs = {}
 
@@ -100,6 +118,7 @@ class Satellite :
 
 
     def get_earthrotation(self, when:datetime.datetime=None) -> float:
+        # How much to rotate 3D globe texture by (texcoord 0.0 == -180° longitude)
         t = when or self.obstime
         TEMEframerotation = ac.TEME(
             (6400*u.km, 0*u.m, 0*u.m), obstime=t).transform_to(
@@ -107,15 +126,16 @@ class Satellite :
         )
         angle = TEMEframerotation.earth_location.geodetic.lon.value - 90.0
         return angle
-        
 
-    def get_geoposition(self, when:datetime.datetime=None) -> tuple[float,float,float]:
-        t = when or self.obstime
-        Re = self.satrec.radiusearthkm
-        xyz = (self.pos[2]*Re, self.pos[0]*Re, self.pos[1]*Re,)
-        geol = ac.TEME(xyz * u.km, obstime=t).transform_to(ac.ITRS(obstime=t)
-                ).earth_location.geodetic
-        return (geol.lat.value, geol.lon.value, geol.height.value)
+
+    def get_sunposition(self, when:datetime.datetime=None, scale_factor:float=100,
+            ) -> tuple[float,float,float]:
+        t = astropy.time.Time(when or self.obstime)
+        pos = ac.get_sun(t).transform_to(ac.TEME(obstime=t))
+        posf = (pos.cartesian.xyz.value * scale_factor).astype(np.float32)
+        # Location in OpenGL orientation; distance/scale/unit doesn't matter
+        # Explicitly convert to regular python `float` (important !) for GLSL shader
+        return (float(posf[1]), float(posf[2]), float(posf[0]))
 
 
     def get_cartesianposition(self, lat:float, long:float, alt_rf:float=0.05,
@@ -131,6 +151,15 @@ class Satellite :
             return tuple(teme)
 
 
+    def geolocation(self, when:datetime.datetime=None) -> tuple[float,float,float]:
+        t = when or self.obstime
+        Re = self.satrec.radiusearthkm
+        xyz = (self.pos[2]*Re, self.pos[0]*Re, self.pos[1]*Re,)
+        geol = ac.TEME(xyz * u.km, obstime=t).transform_to(ac.ITRS(obstime=t)
+                ).earth_location.geodetic
+        return (geol.lat.value, geol.lon.value, geol.height.value)
+
+
     def update(self, when:datetime.datetime=None, set_new:bool=True) -> tuple[float,float,float]:
         t = when or self.obstime
         if set_new and when:
@@ -138,7 +167,8 @@ class Satellite :
         jd,fr = sgp4.api.jday(*t.timetuple()[:6])
         e, p, v = self.satrec.sgp4(jd, fr)
         if e:
-            Logger.error(f"SGP4 : Computational error - {sgp4.api.SGP4_ERRORS[e]}")
+            err = sgp4.api.SGP4_ERRORS[e]
+            Logger.error(f"SGP4 : Computational error for {self.name} at {str(t)} - {err}")
         Re = self.satrec.radiusearthkm
         pos = (p[1]/Re, p[2]/Re, p[0]/Re)
         if set_new :
