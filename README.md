@@ -11,7 +11,7 @@ You can run this code on your system with an installation of Python 3.7 or newer
 1. Clone this repository locally and `cd` into its folder.
 
         git clone https://github.com/STAC-IITMandi/satellite-visualization.git && cd satellite-visualization
-2. It is strongly [recommended](https://kivy.org/doc/stable/gettingstarted/installation.html#create-virtual-environment) to install Kivy (one of the dependencies) in a virtual environment. <br> Run `python -m venv ./venv` to create a new one and place its files in a subfolder `venv` (will remain untracked due to `.gitignore`).
+2. It is strongly [recommended](https://kivy.org/doc/stable/gettingstarted/installation.html#create-virtual-environment) to install Kivy (one of the dependencies) in a virtual environment. <br> Run `python -m venv ./.venv` to create a new one in a subfolder called `.venv` (will remain untracked due to `.gitignore`).
 3. [Activate](https://docs.python.org/3/tutorial/venv.html#creating-virtual-environments) the venv and then install the dependencies, as listed below. All of them are installable from PyPI (`pip install -r requirements.txt`).
 4. Run `python app.py`
 5. The contents of the `data/` folder will very likely be outdated. If the displayed TLE epoch in the app window is more than a week old, (or the satellite position incorrect), you can update the values as decribed in the **Implementation** section below. Then restart the app.
@@ -23,13 +23,18 @@ You can run this code on your system with an installation of Python 3.7 or newer
 numpy>=1.17.0
 kivy>=2.0.0
 astropy>=4.3.0
+jplephem>=2.15
 sgp4>=2.20
 ```
-Links : [numpy](https://numpy.org/install/), [kivy](https://kivy.org/#home), [astropy](https://docs.astropy.org/en/stable/install.html), [sgp4](https://pypi.org/project/sgp4/)
+Links : [numpy](https://numpy.org/install/), [kivy](https://kivy.org/doc/stable/gettingstarted/installation.html), [astropy](https://docs.astropy.org/en/stable/install.html), [jplephem](https://pypi.org/project/jplephem/), [sgp4](https://pypi.org/project/sgp4/)
+
+- The `[base]` module of `kivy` is sufficient (extras/media/gstreamer and other libraries for audio or video playback are not needed)
+- `jplephem` is not used directly in the app, but required by astropy for part of its functionality.
+- In case you want to create an executable file from this code, following the directions for [kivy apps on your target OS](https://kivy.org/doc/stable/guide/packaging.html) is sufficient. Note : there have been some issues with specific versions of [`astropy`](https://github.com/astropy/astropy/issues?q=is%3Aissue+pyinstaller) in the frozen/compiled form (using [`pyinstaller`](https://pyinstaller.readthedocs.io/en/stable/)).
 
 #### Other Sources -
 
-[Earth Texture](world.topo.bathy.200412.3x5400x2700.jpg) - [NASA Visible Earth Library](https://visibleearth.nasa.gov/images/73909/december-blue-marble-next-generation-w-topography-and-bathymetry)
+[Earth Textures](./earth/) - [NASA Visible Earth Library](https://visibleearth.nasa.gov/images/73909/december-blue-marble-next-generation-w-topography-and-bathymetry)
 
 [TLE Data](./data/) - [Celestrak NORAD database](http://celestrak.com/NORAD/elements/)
 

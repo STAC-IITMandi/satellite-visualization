@@ -1,4 +1,5 @@
 numpy>=1.17.0
 kivy>=2.0.0
 astropy>=4.3.0
+jplephem>=2.15
 sgp4>=2.20
